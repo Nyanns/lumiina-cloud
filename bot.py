@@ -9,6 +9,8 @@ import sys
 import time
 import json
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, List
 import requests
 
@@ -243,7 +245,54 @@ class TelegramBot:
                 time.sleep(2)
 
 
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html; charset=utf-8")
+        self.end_headers()
+        html = """<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Lumiina Cloud</title>
+  <style>
+    body { background: #0f172a; color: #f8fafc; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #1e293b; padding: 2rem 3rem; border-radius: 1rem; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5); text-align: center; border: 1px solid #334155; }
+    h1 { color: #f472b6; margin-bottom: 0.5rem; font-size: 1.8rem; }
+    p { color: #94a3b8; font-size: 1rem; margin: 0.4rem 0; }
+    .badge { display: inline-block; background: #059669; color: #ecfdf5; padding: 0.25rem 0.75rem; border-radius: 9999px; font-weight: 600; font-size: 0.85rem; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>✨ Lumiina Cloud</h1>
+    <p>24/7 Telegram Companion Bot for Sandi</p>
+    <p>Powered by Token Harbor Free Tier & Lumiina's Soul</p>
+    <div class="badge">● Online & Ready</div>
+  </div>
+</body>
+</html>"""
+        self.wfile.write(html.encode("utf-8"))
+
+    def log_message(self, format, *args):
+        # Silence HTTP access logs to keep terminal clean
+        return
+
+
+def start_health_server(port: int = 7860):
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        logger.info("Healthcheck web server running on port %d", port)
+        server.serve_forever()
+    except Exception as e:
+        logger.warning("Failed to start healthcheck server on port %d: %s", port, e)
+
+
 def main():
+    # Start web health server in background thread for Hugging Face Spaces compatibility
+    port = int(os.getenv("PORT", "7860"))
+    threading.Thread(target=start_health_server, args=(port,), daemon=True).start()
+
     if not TELEGRAM_BOT_TOKEN:
         logger.critical("TELEGRAM_BOT_TOKEN environment variable is missing!")
         sys.exit(1)

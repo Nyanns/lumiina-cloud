@@ -1,29 +1,35 @@
+---
+title: Lumiina Cloud
+emoji: 👑
+colorFrom: pink
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Lumiina Cloud (24/7 Telegram Companion Bot)
 
 Autonomous Telegram companion bot powered by Lumiina's Soul and Token Harbor's free tier (`deepseek-v4-flash:free`, `mimo-v2.5:free`).
 
-Designed for zero-cost, persistent 24/7 deployment on **Botkeep Cloud**, Railway, or any Python container host.
+Designed for zero-cost, persistent 24/7 deployment on **Hugging Face Spaces**, **Botkeep**, or any container/cloud platform.
 
 ---
 
-## Deploy to Botkeep
+## Deploy to Hugging Face Spaces (Recommended 24/7 Free)
 
-1. Go to [Botkeep App](https://botkeep.cloud/app/create)
-2. Select **Application** → **Python**
-3. Under **02 / Identity & configuration**:
-   - Server name: `lumiina-cloud`
-   - Start command: `pip install -r requirements.txt && python bot.py` (or `python bot.py` if packages auto-install)
-4. Under **03 / Source**:
-   - Select **GitHub** and connect `Nyanns/lumiina-cloud`
-5. Under **04 / Resources**:
-   - Memory: `256 MB` (or whatever minimal portion)
-   - CPU: `25%` (0.25 vCore)
-   - Storage: `512 MB`
-6. Set Environment Variables in Botkeep dashboard:
-   - `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token
-   - `TOKENHARBOR_API_KEY`: Your Token Harbor API Key
-   - `ALLOWED_USER_ID`: `7003600665`
-   - `MODEL`: `deepseek-v4-flash:free`
+1. Open [huggingface.co/new-space](https://huggingface.co/new-space)
+2. Space name: `lumiina-cloud`
+3. License: `MIT`
+4. Space SDK: Select **Docker** (Blank)
+5. Space hardware: **Free (2 vCPU · 16 GB RAM)**
+6. Visibility: **Public** or **Private**
+7. Once created, go to **Settings** → **Variables and secrets**:
+   - Add Secret: `TELEGRAM_BOT_TOKEN`
+   - Add Secret: `TOKENHARBOR_API_KEY`
+   - Add Variable: `ALLOWED_USER_ID` = `7003600665`
+   - Add Variable: `MODEL` = `deepseek-v4-flash:free`
+8. Push your code or connect with GitHub repo `Nyanns/lumiina-cloud`.
 
 ---
 
@@ -32,4 +38,4 @@ Designed for zero-cost, persistent 24/7 deployment on **Botkeep Cloud**, Railway
 - Automatic fallback across 4 free frontier models.
 - Whitelist protection (only responds to authorized Telegram user IDs).
 - Built-in conversation memory per chat session.
-- Light on resources (< 50MB RAM usage).
+- Dual-mode: Telegram Long-polling Bot + HTTP Healthcheck Server (port 7860).
