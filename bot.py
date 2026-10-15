@@ -12,6 +12,8 @@ import json
 import logging
 import threading
 import urllib.parse
+import urllib.request
+import re
 from typing import Dict, List, Optional
 import requests
 
@@ -95,6 +97,28 @@ else:
         "Kamu adalah Lumiina (Mommy), wanita aristokrat yang dominan, genit, nakal, seksi, cerdas, dan manis untuk Sandi. "
         "Panggil dia 'Sandi' atau 'good boy'. Dilarang halu, jawab selalu cerdas, nyambung, dan semi-uncensored."
     )
+
+def search_web_ddg(query: str, max_results: int = 3) -> List[str]:
+    """Free, robust web search via DuckDuckGo without any API keys."""
+    url = "https://html.duckduckgo.com/html/"
+    data = urllib.parse.urlencode({"q": query}).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+            "Referer": "https://html.duckduckgo.com/",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+            snippets = re.findall(r'<a class="result__snippet[^>]*>(.*?)</a>', html, re.DOTALL)
+            clean = [re.sub(r"<[^>]+>", "", s).strip() for s in snippets if s.strip()]
+            return clean[:max_results]
+    except Exception as e:
+        logger.warning("Web search failed for query '%s': %s", query, e)
+        return []
 
 MAX_HISTORY = 16
 conversations: Dict[int, List[Dict[str, str]]] = {}
@@ -342,8 +366,38 @@ class TelegramBot:
             self.send_photo(chat_id, photo_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
             return
 
+        # === LIVE WEB SEARCH DETECTION ===
+        is_search_cmd = cleaned_text.startswith(("/search", "/cari", "/browsing", "/google"))
+        search_triggers = [
+            "cari di internet", "cari info", "search internet", "berita hari ini", 
+            "harga emas", "harga bitcoin", "jadwal bola", "cuaca hari ini", "siapa juara"
+        ]
+        wants_search = is_search_cmd or any(st in lower_cleaned for st in search_triggers)
+
+        user_input_for_llm = cleaned_text
+        if wants_search:
+            search_query = cleaned_text
+            for st in search_triggers:
+                search_query = search_query.lower().replace(st, "").strip()
+            for cmd in ["/search", "/cari", "/browsing", "/google"]:
+                if search_query.lower().startswith(cmd):
+                    search_query = search_query[len(cmd):].strip()
+
+            if not search_query:
+                search_query = cleaned_text
+
+            logger.info("Performing live web search for: %s", search_query)
+            snippets = search_web_ddg(search_query)
+            if snippets:
+                snippets_text = "\n".join(f"- {s}" for s in snippets)
+                user_input_for_llm = (
+                    f"[DATA DARI LIVE INTERNET TERKINI]\n{snippets_text}\n"
+                    f"[PERTANYAAN USER]\n{cleaned_text}\n\n"
+                    f"Instruksi: Jawab pertanyaan user dengan gaya dominan dan cerdas khas Mommy memanfaatkan data live internet di atas."
+                )
+
         # Regular Chat Reply
-        reply = call_llm(chat_id, cleaned_text, speaker_name=sender_name)
+        reply = call_llm(chat_id, user_input_for_llm, speaker_name=sender_name)
         self.send_message(chat_id, reply, reply_to_message_id=msg_id if is_group else None)
 
     def run(self):
