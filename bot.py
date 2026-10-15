@@ -34,6 +34,7 @@ ALLOWED_USERS_RAW = os.getenv("ALLOWED_USER_ID", "7003600665").strip()
 # Support multiple Token Harbor keys separated by commas
 TOKENHARBOR_KEYS_RAW = os.getenv("TOKENHARBOR_API_KEYS", os.getenv("TOKENHARBOR_API_KEY", "")).strip()
 TOKENHARBOR_KEYS: List[str] = [k.strip() for k in TOKENHARBOR_KEYS_RAW.split(",") if k.strip()]
+TOKENHARBOR_API_KEY = TOKENHARBOR_KEYS[0] if TOKENHARBOR_KEYS else ""
 
 # Default model: Upgraded to DeepSeek v4.1 Flash Free (much smarter, less halu)
 DEFAULT_MODEL = os.getenv("MODEL", "deepseek-v4.1-flash:free").strip()
