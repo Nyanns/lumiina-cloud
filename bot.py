@@ -424,58 +424,49 @@ class TelegramBot:
         if self.bot_username and f"@{self.bot_username}" in cleaned_text.lower():
             cleaned_text = cleaned_text.lower().replace(f"@{self.bot_username}", "").strip()
 
-        # === IMAGE GENERATION DETECTION (FREE FLUX / POLLINATIONS) ===
-        is_img_cmd = cleaned_text.startswith(("/img", "/image", "/foto", "/gambar"))
+        # === UNIFIED BULLETPROOF IMAGE ENGINE (SEARCH & GENERATION) ===
+        is_img_cmd = cleaned_text.startswith(("/img", "/image", "/foto", "/gambar", "/cari_foto", "/cari_gambar"))
         lower_cleaned = cleaned_text.lower()
-        img_triggers = [
-            "buatkan gambar", "bikin gambar", "buat gambar", "bikin foto", 
-            "kirim foto", "minta foto", "minta gambar", "lihat foto", 
-            "tampilkan gambar", "tampilkan foto", "generate image", "generate gambar"
-        ]
-        wants_img = is_img_cmd or any(trig in lower_cleaned for trig in img_triggers)
+        
+        action_words = ["cari", "buat", "bikin", "kirim", "tampilkan", "minta", "lihat", "berikan", "tunjuk", "generate"]
+        subject_words = ["gambar", "foto", "image", "picture", "wallpaper", "art", "lukisan", "pic"]
+        
+        wants_image = is_img_cmd or (
+            any(sw in lower_cleaned for sw in subject_words) and 
+            any(aw in lower_cleaned for aw in action_words)
+        )
 
-        if wants_img:
+        if wants_image:
             prompt_subject = cleaned_text
-            for trig in img_triggers:
-                prompt_subject = prompt_subject.lower().replace(trig, "").strip()
-            for cmd in ["/img", "/image", "/foto", "/gambar"]:
-                if prompt_subject.lower().startswith(cmd):
-                    prompt_subject = prompt_subject[len(cmd):].strip()
+            for prefix in ["/img", "/image", "/foto", "/gambar", "/cari_foto", "/cari_gambar"]:
+                if prompt_subject.lower().startswith(prefix):
+                    prompt_subject = prompt_subject[len(prefix):].strip()
+            
+            clean_words = ["coba", "tolong", "dong", "mommy", "buatkan", "bikin", "buat", "kirimkan", "kirim", 
+                           "tampilkan", "minta", "berikan", "cari", "gambar", "foto", "asli", "nyata", "image"]
+            for cw in clean_words:
+                prompt_subject = re.sub(rf'\b{cw}\b', '', prompt_subject, flags=re.IGNORECASE).strip()
 
             if not prompt_subject:
                 prompt_subject = "aristocratic elegant seductive blonde anime mistress, masterpiece, 4k"
 
-            logger.info("Generating image for prompt: %s", prompt_subject)
-            encoded_prompt = urllib.parse.quote(f"{prompt_subject}, masterpiece, high quality, highly detailed, photorealistic anime")
-            photo_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true&seed={int(time.time())}"
-            caption = f"*tersenyum anggun sambil menyodorkan foto* Ini foto yang kamu minta, Sandi... suka melihat karya Mommy? 😏🖤"
+            logger.info("Image requested: %s", prompt_subject)
+
+            # Check if user specifically requested 'real / asli' photo
+            is_real = any(rw in lower_cleaned for rw in ["asli", "nyata", "real", "dunia nyata"])
+            photo_url = None
+            caption = f"*tersenyum nakal sambil menyodorkan foto* Ini foto {prompt_subject} yang kamu minta, Sandi... suka melihatnya? 😏🖤"
+
+            if is_real:
+                photo_url = search_wikimedia_image(prompt_subject)
+
+            # If not real, or real not found (e.g. anime character like Tsunade) -> Use Pollinations Flux!
+            if not photo_url:
+                encoded = urllib.parse.quote(f"{prompt_subject}, masterpiece, high quality, highly detailed, photorealistic anime")
+                photo_url = f"https://image.pollinations.ai/prompt/{encoded}?nologo=true&seed={int(time.time())}"
+
             self.send_photo(chat_id, photo_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
             return
-
-        # === REAL INTERNET IMAGE SEARCH ===
-        is_real_img_cmd = cleaned_text.startswith(("/cari_foto", "/cari_gambar", "/find_image"))
-        real_img_triggers = [
-            "cari foto asli", "cari gambar asli", "cari foto", "cari gambar nyata", 
-            "foto asli", "gambar asli", "foto nyata", "gambar nyata"
-        ]
-        wants_real_img = is_real_img_cmd or any(rt in lower_cleaned for rt in real_img_triggers)
-
-        if wants_real_img:
-            query = cleaned_text
-            for rt in real_img_triggers:
-                query = query.lower().replace(rt, "").strip()
-            for cmd in ["/cari_foto", "/cari_gambar", "/find_image"]:
-                if query.lower().startswith(cmd):
-                    query = query[len(cmd):].strip()
-            if not query:
-                query = "pemandangan alam indah"
-
-            logger.info("Searching real internet image for: %s", query)
-            img_url = search_wikimedia_image(query)
-            if img_url:
-                caption = f"*tersenyum manis* Ini foto nyata dari internet yang Mommy temukan untukmu, Sandi... suka? 😏🖤"
-                self.send_photo(chat_id, img_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
-                return
 
         # === VOICE NOTE (TTS) DETECTION ===
         is_vn_cmd = cleaned_text.startswith(("/vn", "/voice", "/suara"))
