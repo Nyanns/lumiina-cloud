@@ -13,11 +13,12 @@ import gradio as gr
 from bot import (
     TelegramBot,
     TELEGRAM_BOT_TOKEN,
-    TOKENHARBOR_API_KEY,
     DEFAULT_MODEL,
     FALLBACK_MODELS,
     call_llm,
 )
+
+TOKENHARBOR_API_KEY = os.getenv("TOKENHARBOR_API_KEY", os.getenv("TOKENHARBOR_API_KEYS", "")).strip()
 
 # Hugging Face ZeroGPU compatibility shim
 try:
