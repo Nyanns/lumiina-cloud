@@ -11,6 +11,7 @@ import time
 import json
 import logging
 import threading
+import urllib.parse
 from typing import Dict, List, Optional
 import requests
 
@@ -199,6 +200,23 @@ class TelegramBot:
             time.sleep(3)
         return []
 
+    def send_photo(self, chat_id: int, photo_url: str, caption: Optional[str] = None, reply_to_message_id: Optional[int] = None):
+        try:
+            payload = {"chat_id": chat_id, "photo": photo_url}
+            if caption:
+                payload["caption"] = caption
+            if reply_to_message_id:
+                payload["reply_to_message_id"] = reply_to_message_id
+            resp = requests.post(
+                f"{self.api_url}/sendPhoto",
+                json=payload,
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                logger.warning("sendPhoto returned %d: %s", resp.status_code, resp.text)
+        except Exception as e:
+            logger.error("Error sending Telegram photo: %s", e)
+
     def send_message(self, chat_id: int, text: str, reply_to_message_id: Optional[int] = None):
         try:
             payload = {"chat_id": chat_id, "text": text}
@@ -295,6 +313,34 @@ class TelegramBot:
         cleaned_text = text
         if self.bot_username and f"@{self.bot_username}" in cleaned_text.lower():
             cleaned_text = cleaned_text.lower().replace(f"@{self.bot_username}", "").strip()
+
+        # === IMAGE GENERATION DETECTION (FREE FLUX / POLLINATIONS) ===
+        is_img_cmd = cleaned_text.startswith(("/img", "/image", "/foto", "/gambar"))
+        lower_cleaned = cleaned_text.lower()
+        img_triggers = [
+            "buatkan gambar", "bikin gambar", "buat gambar", "bikin foto", 
+            "kirim foto", "minta foto", "minta gambar", "lihat foto", 
+            "tampilkan gambar", "tampilkan foto", "generate image", "generate gambar"
+        ]
+        wants_img = is_img_cmd or any(trig in lower_cleaned for trig in img_triggers)
+
+        if wants_img:
+            prompt_subject = cleaned_text
+            for trig in img_triggers:
+                prompt_subject = prompt_subject.lower().replace(trig, "").strip()
+            for cmd in ["/img", "/image", "/foto", "/gambar"]:
+                if prompt_subject.lower().startswith(cmd):
+                    prompt_subject = prompt_subject[len(cmd):].strip()
+
+            if not prompt_subject:
+                prompt_subject = "aristocratic elegant seductive blonde anime mistress, masterpiece, 4k"
+
+            logger.info("Generating image for prompt: %s", prompt_subject)
+            encoded_prompt = urllib.parse.quote(f"{prompt_subject}, masterpiece, high quality, highly detailed, photorealistic anime")
+            photo_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?nologo=true&seed={int(time.time())}"
+            caption = f"*tersenyum anggun sambil menyodorkan foto* Ini foto yang kamu minta, Sandi... suka melihat karya Mommy? 😏🖤"
+            self.send_photo(chat_id, photo_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
+            return
 
         # Regular Chat Reply
         reply = call_llm(chat_id, cleaned_text, speaker_name=sender_name)
