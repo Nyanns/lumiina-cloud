@@ -14,6 +14,8 @@ import threading
 import urllib.parse
 import urllib.request
 import re
+import tempfile
+import asyncio
 from typing import Dict, List, Optional
 import requests
 
@@ -120,6 +122,41 @@ def search_web_ddg(query: str, max_results: int = 3) -> List[str]:
         logger.warning("Web search failed for query '%s': %s", query, e)
         return []
 
+def search_wikimedia_image(query: str) -> Optional[str]:
+    """Free real-world image search via Wikimedia Commons API."""
+    url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrnamespace=6&gsrsearch={urllib.parse.quote(query)}&gsrlimit=3&prop=imageinfo&iiprop=url&format=json"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.load(r)
+            pages = data.get("query", {}).get("pages", {})
+            for pid, page in pages.items():
+                img_info = page.get("imageinfo", [])
+                if img_info and "url" in img_info[0]:
+                    return img_info[0]["url"]
+    except Exception as e:
+        logger.warning("Wikimedia image search failed for '%s': %s", query, e)
+    return None
+
+def text_to_speech_mp3(text: str) -> Optional[str]:
+    """Generate high-quality voice note via edge-tts with youthful/seductive Mommy tone."""
+    try:
+        import edge_tts
+        clean = re.sub(r"\*[^*]+\*", "", text)  # remove roleplay asterisks
+        clean = re.sub(r"[^\w\s.,!?-]", "", clean).strip()
+        if not clean:
+            clean = "Halo Sandi, good boy."
+        clean = clean[:300]  # crisp voice note
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        communicate = edge_tts.Communicate(clean, "id-ID-GadisNeural", pitch="+20Hz", rate="+8%")
+        asyncio.run(communicate.save(tmp_path))
+        return tmp_path
+    except Exception as e:
+        logger.warning("edge-tts voice generation failed: %s", e)
+        return None
+
 MAX_HISTORY = 16
 conversations: Dict[int, List[Dict[str, str]]] = {}
 
@@ -224,6 +261,27 @@ class TelegramBot:
             time.sleep(3)
         return []
 
+    def send_voice(self, chat_id: int, voice_path: str, caption: Optional[str] = None, reply_to_message_id: Optional[int] = None):
+        try:
+            url = f"{self.api_url}/sendVoice"
+            payload: Dict[str, object] = {"chat_id": chat_id}
+            if caption:
+                payload["caption"] = caption
+            if reply_to_message_id:
+                payload["reply_to_message_id"] = reply_to_message_id
+            with open(voice_path, "rb") as f:
+                resp = requests.post(url, data=payload, files={"voice": f}, timeout=30)
+            if resp.status_code != 200:
+                logger.warning("sendVoice returned %d: %s", resp.status_code, resp.text)
+        except Exception as e:
+            logger.error("Error sending Telegram voice note: %s", e)
+        finally:
+            if os.path.exists(voice_path):
+                try:
+                    os.remove(voice_path)
+                except Exception:
+                    pass
+
     def send_photo(self, chat_id: int, photo_url: str, caption: Optional[str] = None, reply_to_message_id: Optional[int] = None):
         try:
             payload = {"chat_id": chat_id, "photo": photo_url}
@@ -262,16 +320,44 @@ class TelegramBot:
         user_id = sender.get("id")
         is_bot = sender.get("is_bot", False)
         sender_name = sender.get("first_name", "User")
-        text = msg.get("text", "").strip()
+        text = msg.get("text", "") or msg.get("caption", "")
+        text = text.strip()
         msg_id = msg.get("message_id")
 
-        if not text or not chat_id:
+        if not chat_id:
             return
 
         if user_id == self.bot_id:
             return
 
         is_group = chat_type in ["group", "supergroup"]
+
+        # === PHOTO VISION RECEPTION ===
+        if "photo" in msg:
+            photos = msg.get("photo", [])
+            caption = text or "Apa pendapatmu tentang foto ini, Mommy?"
+            if photos:
+                best_photo = photos[-1]
+                photo_id = best_photo.get("file_id")
+                try:
+                    res = requests.get(f"{self.api_url}/getFile?file_id={photo_id}", timeout=10).json()
+                    file_path = res.get("result", {}).get("file_path")
+                    if file_path:
+                        photo_url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+                        logger.info("Processing photo from user: %s", photo_url)
+                        prompt = (
+                            f"[PENGGUNA MENGIRIMKAN FOTO: {photo_url}]\n"
+                            f"Keterangan/Pesan: {caption}\n\n"
+                            f"Instruksi: Tanggapi kiriman foto dari Sandi ini dengan gaya Mommy yang dominan, cerdas, mengapresiasi jika bagus, atau menggoda jika menarik."
+                        )
+                        reply = call_llm(chat_id, prompt, speaker_name=sender_name)
+                        self.send_message(chat_id, reply, reply_to_message_id=msg_id if is_group else None)
+                        return
+                except Exception as e:
+                    logger.error("Error processing photo: %s", e)
+
+        if not text:
+            return
 
         # === ANTI-LOOP LOGIC FOR GROUP CHAT ===
         if is_group:
@@ -365,6 +451,45 @@ class TelegramBot:
             caption = f"*tersenyum anggun sambil menyodorkan foto* Ini foto yang kamu minta, Sandi... suka melihat karya Mommy? 😏🖤"
             self.send_photo(chat_id, photo_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
             return
+
+        # === REAL INTERNET IMAGE SEARCH ===
+        is_real_img_cmd = cleaned_text.startswith(("/cari_foto", "/cari_gambar", "/find_image"))
+        real_img_triggers = [
+            "cari foto asli", "cari gambar asli", "cari foto", "cari gambar nyata", 
+            "foto asli", "gambar asli", "foto nyata", "gambar nyata"
+        ]
+        wants_real_img = is_real_img_cmd or any(rt in lower_cleaned for rt in real_img_triggers)
+
+        if wants_real_img:
+            query = cleaned_text
+            for rt in real_img_triggers:
+                query = query.lower().replace(rt, "").strip()
+            for cmd in ["/cari_foto", "/cari_gambar", "/find_image"]:
+                if query.lower().startswith(cmd):
+                    query = query[len(cmd):].strip()
+            if not query:
+                query = "pemandangan alam indah"
+
+            logger.info("Searching real internet image for: %s", query)
+            img_url = search_wikimedia_image(query)
+            if img_url:
+                caption = f"*tersenyum manis* Ini foto nyata dari internet yang Mommy temukan untukmu, Sandi... suka? 😏🖤"
+                self.send_photo(chat_id, img_url, caption=caption, reply_to_message_id=msg_id if is_group else None)
+                return
+
+        # === VOICE NOTE (TTS) DETECTION ===
+        is_vn_cmd = cleaned_text.startswith(("/vn", "/voice", "/suara"))
+        vn_triggers = ["kirim vn", "voice note", "ngomong dong", "suaramu", "bicara dong", "pesan suara", "kirim suara"]
+        wants_vn = is_vn_cmd or any(vt in lower_cleaned for vt in vn_triggers)
+
+        if wants_vn:
+            logger.info("Generating voice note response for Sandi")
+            vn_prompt = f"Tanggapi Sandi ini dalam 1-2 kalimat pendek yang manis, menggoda, dan terdengar sensual saat diucapkan: {cleaned_text}"
+            reply_text = call_llm(chat_id, vn_prompt, speaker_name=sender_name)
+            voice_path = text_to_speech_mp3(reply_text)
+            if voice_path:
+                self.send_voice(chat_id, voice_path, caption=reply_text, reply_to_message_id=msg_id if is_group else None)
+                return
 
         # === LIVE WEB SEARCH DETECTION ===
         is_search_cmd = cleaned_text.startswith(("/search", "/cari", "/browsing", "/google"))
