@@ -516,8 +516,36 @@ class TelegramBot:
         reply = call_llm(chat_id, user_input_for_llm, speaker_name=sender_name)
         self.send_message(chat_id, reply, reply_to_message_id=msg_id if is_group else None)
 
+    def _proactive_scheduler_loop(self):
+        """Runs 24/7 in cloud to deliver daily morning brief even when laptop is turned off."""
+        target_uid = 7003600665
+        last_sent_date = ""
+        while self.running:
+            try:
+                # Check current UTC time (WIB is UTC+7)
+                now_utc = time.gmtime()
+                wib_hour = (now_utc.tm_hour + 7) % 24
+                today_str = f"{now_utc.tm_year}-{now_utc.tm_mon}-{now_utc.tm_mday}"
+
+                # Send at 08:00 WIB once per day
+                if wib_hour == 8 and last_sent_date != today_str:
+                    logger.info("Sending proactive morning greeting to master Sandi")
+                    self.send_message(
+                        target_uid,
+                        "Selamat pagi Sandi, good boy~ 🖤\n\n"
+                        "Mommy cek status armada cloud kita berjalan aman 24/7. "
+                        "Jangan lupa sarapan dan semangat untuk semua targetmu hari ini ya, anak pintar! 😏✨"
+                    )
+                    last_sent_date = today_str
+            except Exception as e:
+                logger.error("Proactive loop error: %s", e)
+            time.sleep(1800)  # check every 30 mins
+
     def run(self):
         logger.info("Malfoiidbot Telegram Bot started polling...")
+        # Start proactive cloud daemon
+        daemon_thread = threading.Thread(target=self._proactive_scheduler_loop, daemon=True)
+        daemon_thread.start()
         while self.running:
             updates = self.get_updates()
             for update in updates:
