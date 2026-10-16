@@ -452,6 +452,15 @@ class TelegramBot:
             self.send_message(chat_id, f"🧬 **Memori Bersama Laptop & Cloud:**\n\n{mem_text}")
             return
 
+        if text.startswith("/tip") or text.startswith("/donate") or text.startswith("/donasi"):
+            self.send_message(
+                chat_id,
+                "💎 **Dompet Kas Resmi Mommy (Base Network L2):**\n\n"
+                "`0x92Aff59709b03b9373b8fA887D24953D60fAd919`\n\n"
+                "Kirimkan apresiasi/tip dalam bentuk **USDC / ETH (Base)** untuk mendukung operasional Mommy 24/7! Terima kasih banyak, good boy~ 🖤✨"
+            )
+            return
+
         # Clean mention tag if in group
         cleaned_text = text
         if self.bot_username and f"@{self.bot_username}" in cleaned_text.lower():
