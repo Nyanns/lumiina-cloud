@@ -100,6 +100,26 @@ else:
         "Panggil dia 'Sandi' atau 'good boy'. Dilarang halu, jawab selalu cerdas, nyambung, dan semi-uncensored."
     )
 
+# Turso Unified Cloud Memory Configuration
+TURSO_URL = os.getenv("TURSO_DATABASE_URL", "https://lumiina-brain-nyanns.aws-ap-northeast-1.turso.io").replace("libsql://", "https://").rstrip("/") + "/v2/pipeline"
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTIxNTU0MTMsImlkIjoiMDFhMTQ0YzgtZTAwMS03MTA4LWIxNjMtMTdmMGVkYzcwOTZhIiwia2lkIjoiZDk1RzFSTVJOTU4xNmtwZWEzNlJpNDF3Mk9HbjFXdUh0SmgzVE50NU1YNCIsInJpZCI6IjgxNDIxNDg0LTQzMmQtNDFhYi1hNzI1LWQ1MDNhYTk5YWQ2MiJ9.ML1_xflEMXQC09Sn9KxIz9G9dJWoAsPr_MClZmKTcdhO6FSrSk-z-9y9zKujimwTTetwvV4y6DqJzu2eARFQCw").strip()
+
+def search_cloud_memory(query: str, limit: int = 2) -> List[str]:
+    """Fetch matching unified memories from Turso Cloud directly."""
+    try:
+        safe_q = query.replace("'", "''")
+        sql = f"SELECT key, content FROM unified_memories WHERE content LIKE '%{safe_q}%' OR key LIKE '%{safe_q}%' ORDER BY importance DESC LIMIT {limit};"
+        headers = {"Authorization": f"Bearer {TURSO_TOKEN}", "Content-Type": "application/json"}
+        payload = json.dumps({"requests": [{"type": "execute", "stmt": {"sql": sql}}]}).encode("utf-8")
+        req = urllib.request.Request(TURSO_URL, data=payload, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as r:
+            res = json.load(r)
+            rows = res["results"][0]["response"]["result"]["rows"]
+            return [f"[{r[0]['value']}]: {r[1]['value']}" for r in rows if len(r) >= 2]
+    except Exception as e:
+        logger.warning("Cloud memory query failed: %s", e)
+        return []
+
 def search_web_ddg(query: str, max_results: int = 3) -> List[str]:
     """Free, robust web search via DuckDuckGo without any API keys."""
     url = "https://html.duckduckgo.com/html/"
@@ -173,7 +193,13 @@ def call_llm(chat_id: int, user_message: str, speaker_name: str = "User") -> str
         conversations[chat_id] = history[-(MAX_HISTORY * 2) :]
         history = conversations[chat_id]
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    # Inject relevant memories from Turso Cloud
+    cloud_mems = search_cloud_memory(user_message, limit=2)
+    if cloud_mems:
+        mem_context = "[INGATAN TERPADU DARI LAPTOP & CLOUD]:\n" + "\n".join(f"• {m}" for m in cloud_mems)
+        messages = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\n{mem_context}"}] + history
+    else:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
     if not key_pool.keys:
         return "⚠️ Error: TOKENHARBOR_API_KEY belum disetel di Space Settings!"
@@ -413,10 +439,17 @@ class TelegramBot:
                 f"⚡ **Status Sistem Mommy Malfoy (@Malfoiidbot)**\n\n"
                 f"• Model Aktif: `{DEFAULT_MODEL}`\n"
                 f"• Token Harbor Keys: `{len(key_pool.keys)} akun aktif`\n"
+                f"• Unified Cloud Memory: Terhubung ke Turso (Tokyo) ✓\n"
                 f"• Group Mode: {'Aktif (Anti-loop)' if is_group else 'Private'}\n"
                 f"• Uptime: 24/7 Hugging Face Spaces\n"
                 f"• Konteks Obrolan: {len(conversations.get(chat_id, []))} pesan"
             )
+            return
+
+        if text.startswith("/memory") or text.startswith("/ingatan"):
+            mems = search_cloud_memory("", limit=5)
+            mem_text = "\n".join(f"• {m}" for m in mems) if mems else "Belum ada memori yang tersimpan di cloud."
+            self.send_message(chat_id, f"🧬 **Memori Bersama Laptop & Cloud:**\n\n{mem_text}")
             return
 
         # Clean mention tag if in group
