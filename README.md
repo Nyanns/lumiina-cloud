@@ -39,3 +39,5 @@ Designed for zero-cost, persistent 24/7 deployment on **Hugging Face Spaces** (G
 - Whitelist protection (only responds to authorized Telegram user IDs).
 - Built-in conversation memory per chat session.
 - Web Dashboard + Web Playground on Hugging Face Spaces.
+
+<!-- pipeline self-test: verifies clone->apply->commit->push->PR works -->
